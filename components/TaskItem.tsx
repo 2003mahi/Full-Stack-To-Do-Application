@@ -107,32 +107,11 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
     e.preventDefault();
     if (!newSubTaskText.trim()) return;
 
-    let finalPriority = newSubTaskPriority;
-    
-    // If the user hasn't touched the priority and just hits enter, 
-    // we can still use Gemini to be "Smart" if we want, but for simplicity
-    // let's assume they want the one they selected.
-    // If we want to KEEP the smart behavior but allow manual selection:
-    if (isAiSubTaskLoading) return; // prevent double submit
-
-    setIsAiSubTaskLoading(true);
-    try {
-      // Optional: Only ask Gemini if user specifically wants it or if priority is at default.
-      // But based on the prompt "allow users to manually set", we'll use the state.
-      // To keep it "Smart", we could fetch a suggestion ONLY if the text is significant
-      // and they haven't manually changed the dropdown. For now, let's just use their selection
-      // to fulfill the "manual" requirement.
-    } catch (err) {
-      console.error("AI priority suggestion failed", err);
-    } finally {
-      setIsAiSubTaskLoading(false);
-    }
-
     const newSubTask: SubTask = {
       id: crypto.randomUUID(),
       text: newSubTaskText.trim(),
       completed: false,
-      priority: finalPriority,
+      priority: newSubTaskPriority,
       dueDate: newSubTaskDate ? new Date(newSubTaskDate).getTime() : undefined
     };
 
@@ -176,12 +155,17 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
 
   return (
     <div 
-      className={`group bg-white rounded-2xl border transition-all duration-500 ease-in-out hover:shadow-md ${
+      className={`group relative overflow-hidden bg-white rounded-2xl border transition-all duration-500 ease-in-out hover:shadow-md ${
         task.completed 
           ? 'opacity-60 border-slate-100 bg-slate-50/50 scale-[0.99] translate-y-0.5' 
           : 'border-slate-200 shadow-sm'
       } ${isOverdue ? 'border-rose-200 ring-1 ring-rose-50' : ''}`}
     >
+      {/* Visual Accent Bar */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+        task.completed ? 'bg-slate-200' : (isOverdue ? 'bg-rose-500' : (isApproaching ? 'bg-amber-500' : 'bg-blue-500'))
+      } transition-colors duration-500`}></div>
+
       <div className="p-5 flex items-start gap-4">
         <button 
           onClick={() => onToggle(task.id)}
@@ -211,12 +195,14 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
               {task.priority}
             </span>
             {isOverdue && (
-              <span className="px-2 py-0.5 rounded bg-rose-500 text-white text-[9px] font-bold uppercase animate-pulse">
+              <span className="px-2 py-0.5 rounded bg-rose-500 text-white text-[9px] font-bold uppercase animate-pulse shadow-sm shadow-rose-500/20">
+                <i className="fas fa-exclamation-triangle mr-1"></i>
                 Overdue
               </span>
             )}
             {isApproaching && (
-              <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold uppercase">
+              <span className="px-2 py-0.5 rounded bg-amber-500 text-white text-[9px] font-bold uppercase shadow-sm shadow-amber-500/20">
+                <i className="fas fa-clock mr-1"></i>
                 Soon
               </span>
             )}
@@ -238,10 +224,6 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
                 {!task.completed && (
                   <span className="ml-1 opacity-70 italic">({getRelativeTime(task.dueDate, task.completed)})</span>
                 )}
-                
-                <div className="absolute bottom-full left-0 mb-2 px-2 py-1 bg-slate-800 text-white text-[10px] rounded opacity-0 group-hover/date:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-20 shadow-xl">
-                  Exact: {new Date(task.dueDate).toLocaleString()}
-                </div>
               </span>
             )}
             <span className="flex items-center gap-1">
@@ -288,6 +270,28 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
         isExpanded ? 'max-h-[1200px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
         <div className="px-5 pb-5 pt-0 border-t border-slate-50 mt-1">
+          {/* Urgent Notification Banner */}
+          {!task.completed && (isOverdue || isApproaching) && (
+            <div className={`mt-4 mb-2 p-3 rounded-xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-1 ${
+              isOverdue ? 'bg-rose-50 border-rose-100 text-rose-800' : 'bg-amber-50 border-amber-100 text-amber-800'
+            }`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isOverdue ? 'bg-rose-100' : 'bg-amber-100'}`}>
+                <i className={`fas ${isOverdue ? 'fa-fire text-rose-600' : 'fa-hourglass-start text-amber-600'} text-sm`}></i>
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wide">
+                  {isOverdue ? 'Immediate Action Required' : 'Upcoming Deadline'}
+                </p>
+                <p className="text-[11px] opacity-90">
+                  {isOverdue 
+                    ? `This task was due ${new Date(task.dueDate!).toLocaleDateString()}. Complete it as soon as possible.` 
+                    : `This task is approaching its deadline within the next 24 hours.`
+                  }
+                </p>
+              </div>
+            </div>
+          )}
+
           {isEditing ? (
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mt-4 space-y-4 animate-in fade-in slide-in-from-top-2">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -352,7 +356,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
           ) : (
             <>
               {task.description && (
-                <p className={`text-sm mb-4 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100 italic transition-colors duration-500 ${
+                <p className={`text-sm mb-4 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100 italic transition-colors duration-500 mt-4 ${
                   task.completed ? 'text-slate-400' : 'text-slate-600'
                 }`}>
                   {task.description}
@@ -532,7 +536,7 @@ const TaskItem: React.FC<TaskItemProps> = ({ task, onToggle, onDelete, onUpdate 
                         {isAiSubTaskLoading ? (
                           <i className="fas fa-spinner fa-spin"></i>
                         ) : (
-                          <i className="fas fa-wand-sparkles text-[8px]"></i>
+                          <i className="fas fa-plus text-[8px]"></i>
                         )}
                         Add Sub-task
                       </button>
